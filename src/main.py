@@ -163,6 +163,29 @@ class FuturesExecutionEngine:
                 "buy_order_id": buy_order.get("id")
             }
 
+        except ccxt.InsufficientFunds as e:
+            logger.warning(f"  [REACTIVE FALLBACK] Saldo insuficiente no Futures para {symbol}. Republicando para SPOT: {e}")
+            spot_order = {
+                "symbol": symbol,
+                "tier": order.get("tier", ""),
+                "strategy": order.get("strategy", ""),
+                "direction": "LONG",
+                "score": order.get("score", 0.0),
+                "rsi": order.get("rsi", 0),
+                "entry_price": entry_price,
+                "quantity": quantity,
+                "sl_price": sl_price,
+                "tp_price": tp_price,
+                "is_futures": False,
+                "leverage": 1
+            }
+            try:
+                await self.js.publish("trade.order", json.dumps([spot_order]).encode())
+                logger.info(f"  [REACTIVE FALLBACK] Ordem de Spot para {symbol} publicada no NATS.")
+            except Exception as publish_err:
+                logger.error(f"  [REACTIVE FALLBACK] Falha ao publicar fallback de Spot: {publish_err}")
+            return None
+
         except Exception as e:
             logger.error(f"  {symbol}: Erro ao executar ordem de Futures: {e}")
             return None
