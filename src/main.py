@@ -68,6 +68,9 @@ class FuturesExecutionEngine:
         tp_price = order.get("tp_price", 0.0)
         entry_price = order["entry_price"]
         leverage = int(order.get("leverage", 2))
+        direction = order.get("direction", "LONG")
+        is_short = direction == "SHORT"
+        side = "sell" if is_short else "buy"
 
         # Verifica se já tem posição aberta no KV store
         key = await self._kv_key(symbol)
@@ -85,7 +88,7 @@ class FuturesExecutionEngine:
             return None
 
         if DRY_RUN:
-            logger.info(f"  [DRY RUN FUTURES] {symbol}: BUY {quantity} @ ~{entry_price} (Alavancagem {leverage}x) SL={sl_price} TP={tp_price}")
+            logger.info(f"  [DRY RUN FUTURES] {symbol}: {side.upper()} {quantity} @ ~{entry_price} (Alavancagem {leverage}x) SL={sl_price} TP={tp_price}")
             pos_data = {
                 "symbol": symbol,
                 "quantity": quantity,
@@ -94,7 +97,8 @@ class FuturesExecutionEngine:
                 "tp_price": tp_price,
                 "entry_time": __import__('time').time(),
                 "is_futures": True,
-                "leverage": leverage
+                "leverage": leverage,
+                "direction": direction,
             }
             await self.kv.put(key, json.dumps(pos_data).encode())
             return {
@@ -106,11 +110,11 @@ class FuturesExecutionEngine:
                 "tp_price": tp_price,
                 "is_futures": True,
                 "leverage": leverage,
+                "direction": direction,
                 "tier": order.get("tier"),
                 "strategy": order.get("strategy"),
                 "score": order.get("score"),
                 "rsi": order.get("rsi"),
-                "direction": "LONG"
             }
 
         try:
@@ -118,7 +122,6 @@ class FuturesExecutionEngine:
             try:
                 self.exchange.set_margin_mode("ISOLATED", symbol)
             except Exception as e:
-                # set_margin_mode lança erro se já estiver como isolada, o que é seguro ignorar
                 logger.info(f"  {symbol}: Margem isolada já configurada ou erro: {e}")
 
             logger.info(f"  {symbol}: Configurando alavancagem para {leverage}x...")
@@ -127,11 +130,11 @@ class FuturesExecutionEngine:
             except Exception as e:
                 logger.error(f"  {symbol}: Falha ao configurar alavancagem: {e}")
 
-            logger.info(f"  {symbol}: Executando market BUY/LONG {quantity}...")
-            buy_order = self.exchange.create_order(symbol, "market", "buy", quantity)
-            filled_price = float(buy_order.get("average", buy_order.get("price", entry_price)))
-            filled_qty = float(buy_order.get("filled", quantity))
-            logger.info(f"  {symbol}: BUY FUTURES executado {filled_qty} @ {filled_price}")
+            logger.info(f"  {symbol}: Executando market {side.upper()} {quantity}...")
+            order_result = self.exchange.create_order(symbol, "market", side, quantity)
+            filled_price = float(order_result.get("average", order_result.get("price", entry_price)))
+            filled_qty = float(order_result.get("filled", quantity))
+            logger.info(f"  {symbol}: {side.upper()} FUTURES executado {filled_qty} @ {filled_price}")
 
             import time as _time
             pos_data = {
@@ -142,7 +145,8 @@ class FuturesExecutionEngine:
                 "tp_price": tp_price,
                 "entry_time": _time.time(),
                 "is_futures": True,
-                "leverage": leverage
+                "leverage": leverage,
+                "direction": direction,
             }
             await self.kv.put(key, json.dumps(pos_data).encode())
 
@@ -155,12 +159,12 @@ class FuturesExecutionEngine:
                 "tp_price": tp_price,
                 "is_futures": True,
                 "leverage": leverage,
+                "direction": direction,
                 "tier": order.get("tier"),
                 "strategy": order.get("strategy"),
                 "score": order.get("score"),
                 "rsi": order.get("rsi"),
-                "direction": "LONG",
-                "buy_order_id": buy_order.get("id")
+                "order_id": order_result.get("id")
             }
 
         except ccxt.InsufficientFunds as e:
