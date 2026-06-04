@@ -37,6 +37,11 @@ class FuturesExecutionEngine:
             }
         })
 
+    def _exchange_symbol(self, symbol):
+        if ":" not in symbol:
+            return f"{symbol}:USDT"
+        return symbol
+
     async def connect_nats(self):
         self.nc = await nats.connect(NATS_URL)
         self.js = self.nc.jetstream()
@@ -117,21 +122,22 @@ class FuturesExecutionEngine:
                 "rsi": order.get("rsi"),
             }
 
+        ccxt_symbol = self._exchange_symbol(symbol)
         try:
             logger.info(f"  {symbol}: Configurando margem ISOLATED...")
             try:
-                self.exchange.set_margin_mode("ISOLATED", symbol)
+                self.exchange.set_margin_mode("ISOLATED", ccxt_symbol)
             except Exception as e:
                 logger.info(f"  {symbol}: Margem isolada já configurada ou erro: {e}")
 
             logger.info(f"  {symbol}: Configurando alavancagem para {leverage}x...")
             try:
-                self.exchange.set_leverage(leverage, symbol)
+                self.exchange.set_leverage(leverage, ccxt_symbol)
             except Exception as e:
                 logger.error(f"  {symbol}: Falha ao configurar alavancagem: {e}")
 
             logger.info(f"  {symbol}: Executando market {side.upper()} {quantity}...")
-            order_result = self.exchange.create_order(symbol, "market", side, quantity)
+            order_result = self.exchange.create_order(ccxt_symbol, "market", side, quantity)
             filled_price = float(order_result.get("average", order_result.get("price", entry_price)))
             filled_qty = float(order_result.get("filled", quantity))
             logger.info(f"  {symbol}: {side.upper()} FUTURES executado {filled_qty} @ {filled_price}")
@@ -234,17 +240,20 @@ class FuturesExecutionEngine:
                 return
 
             qty = pos["quantity"]
+            direction = pos.get("direction", "LONG")
+            side = "buy" if direction == "SHORT" else "sell"
+            ccxt_symbol = self._exchange_symbol(symbol)
 
             if DRY_RUN:
-                logger.info(f"  [DRY RUN FUTURES] Fechando posição {symbol} ({qty}) com Reduce-Only")
+                logger.info(f"  [DRY RUN FUTURES] Fechando posição {symbol} {direction} ({qty}) com Reduce-Only")
                 await self.kv.delete(key)
                 await msg.ack()
                 return
 
-            logger.info(f"  {symbol}: Fechando posição de Futures de {qty}...")
-            # Ordem de venda de fechamento com reduceOnly=True
-            sell_order = self.exchange.create_order(symbol, "market", "sell", qty, params={"reduceOnly": True})
-            logger.info(f"  {symbol}: Posição fechada com sucesso. Order ID: {sell_order.get('id')}")
+            logger.info(f"  {symbol}: Fechando posição de Futures {direction} ({side.upper()}) de {qty}...")
+            # Ordem de fechamento com reduceOnly=True
+            order_result = self.exchange.create_order(ccxt_symbol, "market", side, qty, params={"reduceOnly": True})
+            logger.info(f"  {symbol}: Posição fechada com sucesso. Order ID: {order_result.get('id')}")
 
             await self.kv.delete(key)
             await msg.ack()
