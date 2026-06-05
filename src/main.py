@@ -120,6 +120,7 @@ class FuturesExecutionEngine:
                 "strategy": order.get("strategy"),
                 "score": order.get("score"),
                 "rsi": order.get("rsi"),
+                "market_regime": order.get("market_regime", "neutral"),
             }
 
         ccxt_symbol = self._exchange_symbol(symbol)
@@ -170,7 +171,8 @@ class FuturesExecutionEngine:
                 "strategy": order.get("strategy"),
                 "score": order.get("score"),
                 "rsi": order.get("rsi"),
-                "order_id": order_result.get("id")
+                "order_id": order_result.get("id"),
+                "market_regime": order.get("market_regime", "neutral"),
             }
 
         except ccxt.InsufficientFunds as e:
@@ -187,7 +189,8 @@ class FuturesExecutionEngine:
                 "sl_price": sl_price,
                 "tp_price": tp_price,
                 "is_futures": False,
-                "leverage": 1
+                "leverage": 1,
+                "market_regime": order.get("market_regime", "neutral"),
             }
             try:
                 await self.js.publish("trade.order", json.dumps([spot_order]).encode())
