@@ -137,10 +137,9 @@ class FuturesExecutionEngine:
             except Exception as e:
                 logger.error(f"  {symbol}: Falha ao configurar alavancagem: {e}")
 
-            logger.info(f"  {symbol}: Executando market {side.upper()} {quantity}...")
             order_result = self.exchange.create_order(ccxt_symbol, "market", side, quantity)
-            filled_price = float(order_result.get("average", order_result.get("price", entry_price)))
-            filled_qty = float(order_result.get("filled", quantity))
+            filled_price = float(order_result.get("average") or order_result.get("price") or entry_price)
+            filled_qty = float(order_result.get("filled") or quantity)
             logger.info(f"  {symbol}: {side.upper()} FUTURES executado {filled_qty} @ {filled_price}")
 
             import time as _time
